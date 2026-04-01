@@ -53,6 +53,23 @@ public class GameManager : MonoBehaviour
     public GameState CurrentState { get; private set; } = GameState.Playing;
 
     // ─────────────────────────────────────────────────────────────────────────
+    //  Character & Wave State (Phase 1 additions)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The <see cref="CharacterData"/> the player chose on the character-select screen.
+    /// Set by <see cref="CharacterSelectManager.ConfirmSelection"/> and read by
+    /// <see cref="CharacterStatApplier"/> when the game scene loads.
+    /// </summary>
+    public CharacterData SelectedCharacter { get; set; }
+
+    /// <summary>
+    /// Convenience property that returns the current wave number from
+    /// <see cref="WaveManager.Instance"/>, or 1 when WaveManager is not yet active.
+    /// </summary>
+    public int CurrentWave => WaveManager.Instance != null ? WaveManager.Instance.CurrentWave : 1;
+
+    // ─────────────────────────────────────────────────────────────────────────
     //  Inspector-Exposed Settings
     // ─────────────────────────────────────────────────────────────────────────
 

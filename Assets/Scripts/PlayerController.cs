@@ -70,6 +70,17 @@ public class PlayerController : MonoBehaviour
     private Rigidbody2D _rb;
     private SpriteRenderer _spriteRenderer;
 
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Public Properties (Phase 1 additions)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Child Transform named "GunAttachPoint" found at startup.
+    /// <see cref="GunController"/> uses this to position itself relative to the player.
+    /// Assign a child GameObject called "GunAttachPoint" in the scene hierarchy.
+    /// </summary>
+    public Transform GunAttachPoint { get; private set; }
+
     // Movement
     private float _horizontalInput;
     private float _targetVelocityX;
@@ -97,6 +108,12 @@ public class PlayerController : MonoBehaviour
 
         // Prevent the player from rotating due to physics collisions
         _rb.constraints = RigidbodyConstraints2D.FreezeRotation;
+
+        // Cache the gun attach point child Transform (Phase 1 addition)
+        GunAttachPoint = transform.Find("GunAttachPoint");
+        if (GunAttachPoint == null)
+            Debug.LogWarning("[PlayerController] No child named 'GunAttachPoint' found. " +
+                             "Create one in the hierarchy so GunController can position itself correctly.");
     }
 
     private void Update()
@@ -325,5 +342,19 @@ public class PlayerController : MonoBehaviour
 
         Gizmos.color = _isGrounded ? Color.green : Color.red;
         Gizmos.DrawWireSphere(groundCheck.position, groundCheckRadius);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Phase 1 — Stat Overrides
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Overrides the movement speed at runtime.
+    /// Called by <see cref="CharacterStatApplier"/> after reading <see cref="CharacterData"/>.
+    /// </summary>
+    /// <param name="speed">New movement speed in units per second.</param>
+    public void SetMoveSpeed(float speed)
+    {
+        moveSpeed = Mathf.Max(0f, speed);
     }
 }
