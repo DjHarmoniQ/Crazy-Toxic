@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 /// <summary>
@@ -13,6 +14,13 @@ using UnityEngine;
 /// </summary>
 public class CameraController : MonoBehaviour
 {
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Singleton
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Global access point to the scene's CameraController.</summary>
+    public static CameraController Instance { get; private set; }
+
     // ─────────────────────────────────────────────────────────────────────────
     //  Inspector-Exposed Settings
     // ─────────────────────────────────────────────────────────────────────────
@@ -56,9 +64,28 @@ public class CameraController : MonoBehaviour
     // Fixed Z position of the camera so it never moves toward/away from the scene
     private float _fixedZ;
 
+    // Current shake offset applied on top of the follow position each frame
+    private Vector3 _shakeOffset;
+
     // ─────────────────────────────────────────────────────────────────────────
     //  Unity Lifecycle
     // ─────────────────────────────────────────────────────────────────────────
+
+    private void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        Instance = this;
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+            Instance = null;
+    }
 
     private void Start()
     {
@@ -124,12 +151,24 @@ public class CameraController : MonoBehaviour
         // Always lock Z to the fixed depth
         smoothedPosition.z = _fixedZ;
 
-        transform.position = smoothedPosition;
+        transform.position = smoothedPosition + _shakeOffset;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     //  Public API
     // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Shakes the camera for <paramref name="duration"/> seconds with a random
+    /// per-frame offset of up to <paramref name="intensity"/> units, then
+    /// smoothly returns to the base follow position.
+    /// </summary>
+    /// <param name="intensity">Maximum shake displacement in world units.</param>
+    /// <param name="duration">How long the shake lasts in seconds.</param>
+    public void ShakeCamera(float intensity, float duration)
+    {
+        StartCoroutine(ShakeCameraCoroutine(intensity, duration));
+    }
 
     /// <summary>
     /// Instantly snaps the camera to the target (useful after scene loads or
@@ -154,6 +193,40 @@ public class CameraController : MonoBehaviour
     public void SetTarget(Transform newTarget)
     {
         target = newTarget;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Private Helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Coroutine that applies a random per-frame shake offset for <paramref name="duration"/>
+    /// seconds, then smoothly damps the offset back to zero.
+    /// </summary>
+    private IEnumerator ShakeCameraCoroutine(float intensity, float duration)
+    {
+        float elapsed = 0f;
+
+        while (elapsed < duration)
+        {
+            // Random 2-D offset scaled by remaining intensity
+            float progress = elapsed / duration;
+            float currentIntensity = Mathf.Lerp(intensity, 0f, progress);
+            Vector2 randomOffset = Random.insideUnitCircle * currentIntensity;
+            _shakeOffset = new Vector3(randomOffset.x, randomOffset.y, 0f);
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        // Smoothly return to zero offset
+        while (_shakeOffset.sqrMagnitude > 0.0001f)
+        {
+            _shakeOffset = Vector3.Lerp(_shakeOffset, Vector3.zero, Time.deltaTime * 10f);
+            yield return null;
+        }
+
+        _shakeOffset = Vector3.zero;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
