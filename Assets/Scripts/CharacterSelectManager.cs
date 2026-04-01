@@ -27,7 +27,7 @@ public class CharacterSelectManager : MonoBehaviour
     // ─────────────────────────────────────────────────────────────────────────
 
     [Header("Character Data")]
-    [Tooltip("All playable characters, in display order. Assign in the Inspector.")]
+    [Tooltip("All playable characters, in display order. Leave empty to auto-load from Resources/Characters/.")]
     [SerializeField] private CharacterData[] characters;
 
     [Header("UI References — cache all in Inspector, never use FindObjectsOfType")]
@@ -62,6 +62,14 @@ public class CharacterSelectManager : MonoBehaviour
 
     private void Awake()
     {
+        // Auto-load characters from Resources/Characters/ if none are assigned.
+        if (characters == null || characters.Length == 0)
+        {
+            characters = Resources.LoadAll<CharacterData>("Characters");
+            if (characters != null && characters.Length > 0)
+                Debug.Log($"[CharacterSelectManager] Loaded {characters.Length} CharacterData assets from Resources/Characters/.");
+        }
+
         // All UI references must be cached here.
         // NEVER call FindObjectsOfType in Update — it iterates every scene object
         // every frame and caused the original freeze.
@@ -73,6 +81,29 @@ public class CharacterSelectManager : MonoBehaviour
         // Pre-select the first character (index 0) so the UI is never blank
         if (characters != null && characters.Length > 0)
             SelectCharacter(0);
+    }
+
+    /// <summary>
+    /// Handles keyboard arrow-key navigation through the character list.
+    /// </summary>
+    private void Update()
+    {
+        if (characters == null || characters.Length == 0) return;
+
+        if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.DownArrow))
+        {
+            int newIndex = (_selectedIndex - 1 + characters.Length) % characters.Length;
+            SelectCharacter(newIndex);
+        }
+        else if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.UpArrow))
+        {
+            int newIndex = (_selectedIndex + 1) % characters.Length;
+            SelectCharacter(newIndex);
+        }
+        else if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space))
+        {
+            ConfirmSelection();
+        }
     }
 
     private void OnDestroy()
@@ -135,6 +166,7 @@ public class CharacterSelectManager : MonoBehaviour
 
     /// <summary>
     /// Updates the UI panel to reflect <paramref name="data"/>.
+    /// Now includes character class, passive name, ultimate name, and ultimate mana cost.
     /// Reuses existing UI objects — no Destroy/Instantiate per click (avoids GC spikes).
     /// </summary>
     private void RefreshUI(CharacterData data)
@@ -149,11 +181,14 @@ public class CharacterSelectManager : MonoBehaviour
         }
 
         if (statsText != null)
+        {
             statsText.text =
-                $"HP: {data.maxHealth}\n" +
-                $"Speed: {data.moveSpeed}\n" +
-                $"Damage: {data.damage}\n" +
-                $"Armor: {data.armor}";
+                $"Class: {data.characterClass}\n" +
+                $"HP: {data.maxHealth}  Speed: {data.moveSpeed}\n" +
+                $"Damage: {data.damage}  Armor: {data.armor}\n" +
+                $"\n⬡ Passive — {data.passiveName}\n{data.passiveDescription}\n" +
+                $"\n⚡ Ultimate — {data.ultimateName}  [{data.ultimateCost} mana]\n{data.ultimateDescription}";
+        }
     }
 
     /// <summary>
@@ -163,7 +198,7 @@ public class CharacterSelectManager : MonoBehaviour
     private void ValidateCachedReferences()
     {
         if (characters == null || characters.Length == 0)
-            Debug.LogWarning("[CharacterSelectManager] No CharacterData assets assigned in the Inspector.");
+            Debug.LogWarning("[CharacterSelectManager] No CharacterData assets assigned or found in Resources/Characters/.");
 
         if (nameText == null)
             Debug.LogWarning("[CharacterSelectManager] nameText is not assigned.");
