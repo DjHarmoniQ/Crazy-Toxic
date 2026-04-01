@@ -38,6 +38,12 @@ public class WaveManager : MonoBehaviour
     /// <summary>Number of enemies currently alive in the active wave.</summary>
     public int EnemiesAlive { get; private set; }
 
+    /// <summary>
+    /// Difficulty parameters for the current wave, populated by
+    /// <see cref="WaveDifficultyScaler"/> at the start of each wave.
+    /// </summary>
+    public WaveDifficultyScaler.WaveParams CurrentWaveParams { get; private set; }
+
     // ─────────────────────────────────────────────────────────────────────────
     //  Events
     // ─────────────────────────────────────────────────────────────────────────
@@ -77,7 +83,8 @@ public class WaveManager : MonoBehaviour
 
     private void Start()
     {
-        // Broadcast wave 1 so the UI initialises to "WAVE 1"
+        // Populate params for wave 1, then broadcast so the UI initialises to "WAVE 1"
+        RefreshWaveParams();
         OnWaveChanged?.Invoke(CurrentWave);
     }
 
@@ -127,13 +134,41 @@ public class WaveManager : MonoBehaviour
     {
         _isTransitioning = false;
         CurrentWave++;
-        Debug.Log($"[WaveManager] Wave {CurrentWave} started.");
+        RefreshWaveParams();
+        Debug.Log($"[WaveManager] Wave {CurrentWave} started. " +
+                  $"HP×{CurrentWaveParams.HealthMultiplier:F2} " +
+                  $"DMG×{CurrentWaveParams.DamageMultiplier:F2} " +
+                  $"Spawn×{CurrentWaveParams.SpawnRateMultiplier:F2} " +
+                  $"Enemies:{CurrentWaveParams.EnemiesPerWave}" +
+                  (CurrentWaveParams.IsElite   ? " [ELITE]"    : "") +
+                  (CurrentWaveParams.IsMiniBoss ? " [MINI-BOSS]" : "") +
+                  (CurrentWaveParams.IsPrestige ? " [PRESTIGE]" : ""));
         OnWaveChanged?.Invoke(CurrentWave);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     //  Private Helpers
     // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Queries <see cref="WaveDifficultyScaler"/> (if available) and caches wave params.</summary>
+    private void RefreshWaveParams()
+    {
+        if (WaveDifficultyScaler.Instance != null)
+        {
+            CurrentWaveParams = WaveDifficultyScaler.Instance.GetWaveParams(CurrentWave);
+        }
+        else
+        {
+            // Fallback: neutral params when the scaler is not in the scene
+            CurrentWaveParams = new WaveDifficultyScaler.WaveParams
+            {
+                HealthMultiplier    = 1f,
+                DamageMultiplier    = 1f,
+                SpawnRateMultiplier = 1f,
+                EnemiesPerWave      = 5,
+            };
+        }
+    }
 
     /// <summary>Waits <see cref="waveTransitionDelay"/> seconds then starts the next wave.</summary>
     private IEnumerator WaveTransitionCoroutine()
