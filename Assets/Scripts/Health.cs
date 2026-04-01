@@ -17,6 +17,20 @@ public class Health : MonoBehaviour, IDamageable
     [Tooltip("Starting maximum hit points. Can be overridden at runtime by CharacterStatApplier.")]
     [SerializeField] private float maxHealth = 100f;
 
+    [Tooltip("When true, reaching zero HP calls GameManager.GameOver(). " +
+             "Disable this for enemies so their death does not end the run.")]
+    [SerializeField] private bool triggerGameOverOnDeath = true;
+
+    /// <summary>
+    /// When <c>false</c>, death does not call <see cref="GameManager.GameOver"/>.
+    /// Set this to <c>false</c> on enemy Health components.
+    /// </summary>
+    public bool TriggerGameOverOnDeath
+    {
+        get => triggerGameOverOnDeath;
+        set => triggerGameOverOnDeath = value;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     //  Public Properties
     // ─────────────────────────────────────────────────────────────────────────
@@ -93,7 +107,7 @@ public class Health : MonoBehaviour, IDamageable
         Debug.Log($"[Health] {gameObject.name} has died.");
         OnDeath?.Invoke();
 
-        if (GameManager.Instance != null)
+        if (triggerGameOverOnDeath && GameManager.Instance != null)
             GameManager.Instance.GameOver();
     }
 }
