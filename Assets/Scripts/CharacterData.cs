@@ -73,6 +73,10 @@ public class CharacterData : ScriptableObject
     [Tooltip("Seconds the player must wait after using the ultimate before using it again.")]
     public float ultimateCooldown;
 
+    [Header("Lore")]
+    [Tooltip("Short flavour-text blurb shown on the Character Info screen.")]
+    public string loreBlurb;
+
     // Knight-specific buff (+25 % HP, +15 % damage) is applied at runtime by
     // CharacterStatApplier using a  characterName == "Knight"  check.
 }
