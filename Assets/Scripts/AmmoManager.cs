@@ -36,6 +36,9 @@ public class AmmoManager : MonoBehaviour
     /// <summary>Number of rounds remaining for the currently equipped ammo type.</summary>
     public int CurrentAmmoCount { get; private set; }
 
+    /// <summary>Zero-based index of the currently active ammo type in the available array.</summary>
+    public int CurrentAmmoIndex => _currentIndex;
+
     // ─────────────────────────────────────────────────────────────────────────
     //  Events
     // ─────────────────────────────────────────────────────────────────────────
@@ -97,6 +100,20 @@ public class AmmoManager : MonoBehaviour
 
         _currentIndex = index;
         ApplyCurrentAmmo();
+    }
+
+    /// <summary>
+    /// Switches the active ammo type to <paramref name="type"/> if it exists in the
+    /// available ammo list.
+    /// </summary>
+    /// <param name="type">The <see cref="AmmoType"/> ScriptableObject to equip.</param>
+    /// <returns><c>true</c> if the switch succeeded; <c>false</c> if the type was not found.</returns>
+    public bool SwitchToAmmo(AmmoType type)
+    {
+        int idx = FindAmmoIndex(type);
+        if (idx < 0) return false;
+        SwitchAmmo(idx);
+        return true;
     }
 
     /// <summary>

@@ -38,6 +38,9 @@ public class Health : MonoBehaviour, IDamageable
     /// <summary>The character's current hit points.</summary>
     public float CurrentHealth { get; private set; }
 
+    /// <summary>The character's maximum hit points.</summary>
+    public float MaxHealth => maxHealth;
+
     // ─────────────────────────────────────────────────────────────────────────
     //  Events
     // ─────────────────────────────────────────────────────────────────────────
@@ -74,6 +77,20 @@ public class Health : MonoBehaviour, IDamageable
     {
         maxHealth = Mathf.Max(1f, value);
         CurrentHealth = maxHealth;
+        OnHealthChanged?.Invoke(CurrentHealth, maxHealth);
+    }
+
+    /// <summary>
+    /// Restores <paramref name="amount"/> hit points, clamping to <see cref="MaxHealth"/>.
+    /// Does nothing if the character is already dead.
+    /// </summary>
+    /// <param name="amount">Positive number of hit points to restore.</param>
+    public void Heal(float amount)
+    {
+        if (CurrentHealth <= 0f) return;
+        if (amount <= 0f) return;
+
+        CurrentHealth = Mathf.Min(CurrentHealth + amount, maxHealth);
         OnHealthChanged?.Invoke(CurrentHealth, maxHealth);
     }
 

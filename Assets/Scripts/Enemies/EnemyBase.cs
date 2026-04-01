@@ -166,6 +166,32 @@ public abstract class EnemyBase : MonoBehaviour, IDamageable
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    //  Public API
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Forces this enemy into the <see cref="EnemyState.Hurt"/> state for
+    /// <paramref name="duration"/> seconds, preventing it from attacking or moving.
+    /// </summary>
+    /// <param name="duration">How long (in seconds) the stun lasts.</param>
+    public void Stun(float duration)
+    {
+        if (_isDead) return;
+        StopAllCoroutines();
+        StartCoroutine(StunCoroutine(duration));
+    }
+
+    /// <summary>Coroutine that keeps the enemy in Hurt state for <paramref name="duration"/> seconds.</summary>
+    private System.Collections.IEnumerator StunCoroutine(float duration)
+    {
+        _currentState = EnemyState.Hurt;
+        StopMovement();
+        yield return new WaitForSeconds(duration);
+        if (!_isDead)
+            _currentState = EnemyState.Chase;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     //  IDamageable Implementation
     // ─────────────────────────────────────────────────────────────────────────
 
