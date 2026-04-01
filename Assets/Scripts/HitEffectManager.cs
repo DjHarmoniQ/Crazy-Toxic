@@ -61,7 +61,7 @@ public class HitEffectManager : MonoBehaviour
     //  Unity Lifecycle
     // ─────────────────────────────────────────────────────────────────────────
 
-    private void Awake()
+    protected virtual void Awake()
     {
         if (Instance != null && Instance != this)
         {
