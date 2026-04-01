@@ -17,6 +17,9 @@ using UnityEngine;
 /// The component also mirrors the fire-point offset when the sprite is flipped
 /// so the gun stays in the player's LEFT hand regardless of facing direction.
 ///
+/// Phase 3 additions: integrates <see cref="AmmoManager"/>, <see cref="ComboSystem"/>,
+/// <see cref="KnockbackSystem"/>, and <see cref="HitEffectManager"/>.
+///
 /// Attach to: The Player GameObject (alongside SpriteRenderer).
 /// </summary>
 public class GunController : MonoBehaviour
@@ -39,16 +42,20 @@ public class GunController : MonoBehaviour
     [SerializeField] private Vector2 firePointOffset = new Vector2(-0.4f, 0.1f);
 
     [Header("Fire Settings")]
-    [Tooltip("Seconds between consecutive shots (lower = faster fire rate).")]
+    [Tooltip("Seconds between consecutive shots (lower = faster fire rate). " +
+             "Overridden by the active AmmoType.fireRate when an AmmoManager is present.")]
     [SerializeField] private float fireRate = 0.25f;
 
-    [Tooltip("Hit points subtracted from the target per bullet.")]
+    [Tooltip("Hit points subtracted from the target per bullet. " +
+             "Overridden by the active AmmoType.damage when an AmmoManager is present.")]
     [SerializeField] private int damage = 10;
 
-    [Tooltip("Speed of the spawned bullet projectile (units/second).")]
+    [Tooltip("Speed of the spawned bullet projectile (units/second). " +
+             "Overridden by the active AmmoType.bulletSpeed when an AmmoManager is present.")]
     [SerializeField] private float bulletSpeed = 20f;
 
-    [Tooltip("Maximum distance a bullet travels before being destroyed.")]
+    [Tooltip("Maximum distance a bullet travels before being destroyed. " +
+             "Overridden by the active AmmoType.bulletRange when an AmmoManager is present.")]
     [SerializeField] private float bulletRange = 15f;
 
     [Header("Bullet Prefab")]
@@ -60,18 +67,24 @@ public class GunController : MonoBehaviour
     [Tooltip("LayerMask for hitscan targets when no bullet prefab is used.")]
     [SerializeField] private LayerMask hitscanLayerMask = ~0; // everything by default
 
+    [Header("Knockback")]
+    [Tooltip("Duration in seconds the knockback velocity is applied to the hit target.")]
+    [SerializeField] private float knockbackDuration = 0.15f;
+
     // ─────────────────────────────────────────────────────────────────────────
     //  Private State
     // ─────────────────────────────────────────────────────────────────────────
 
     private float _nextFireTime;
     private SpriteRenderer _spriteRenderer;
+    private AmmoManager _ammoManager;
+    private ComboSystem _comboSystem;
 
     // ─────────────────────────────────────────────────────────────────────────
     //  Public API
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Current damage value; can be overridden by CharacterStatApplier.</summary>
+    /// <summary>Current base damage value; can be overridden by CharacterStatApplier.</summary>
     public int Damage
     {
         get => damage;
@@ -85,6 +98,8 @@ public class GunController : MonoBehaviour
     private void Awake()
     {
         _spriteRenderer = GetComponent<SpriteRenderer>();
+        _ammoManager    = GetComponent<AmmoManager>();
+        _comboSystem    = GetComponent<ComboSystem>();
     }
 
     private void Update()
@@ -96,11 +111,14 @@ public class GunController : MonoBehaviour
         // Update the fire-point position every frame so it tracks sprite flipping
         UpdateFirePointPosition();
 
+        // Determine the effective fire rate (AmmoType overrides inspector value)
+        float effectiveFireRate = GetEffectiveFireRate();
+
         // Fire on left-mouse / controller "Fire1"
         if (Input.GetButtonDown("Fire1") && Time.time >= _nextFireTime)
         {
-            _nextFireTime = Time.time + fireRate;
-            Shoot();
+            _nextFireTime = Time.time + effectiveFireRate;
+            TryShoot();
         }
     }
 
@@ -124,6 +142,33 @@ public class GunController : MonoBehaviour
         // localPosition keeps the offset relative to the parent (player) pivot,
         // which avoids any world-unit grid snapping — this is the gridline fix.
         firePoint.localPosition = new Vector3(xOffset, firePointOffset.y, 0f);
+    }
+
+    /// <summary>
+    /// Returns the fire rate in seconds per shot. Uses the active AmmoType value
+    /// when an <see cref="AmmoManager"/> is present, otherwise falls back to the
+    /// inspector-set <see cref="fireRate"/>.
+    /// </summary>
+    private float GetEffectiveFireRate()
+    {
+        if (_ammoManager != null && _ammoManager.CurrentAmmo != null)
+            return _ammoManager.CurrentAmmo.fireRate;
+        return fireRate;
+    }
+
+    /// <summary>
+    /// Checks ammo availability then fires; does nothing if out of ammo.
+    /// </summary>
+    private void TryShoot()
+    {
+        // Consume one round; bail out if the magazine is empty
+        if (_ammoManager != null && !_ammoManager.TryConsumeAmmo())
+        {
+            Debug.Log("[GunController] Out of ammo – cannot fire.");
+            return;
+        }
+
+        Shoot();
     }
 
     /// <summary>
@@ -170,26 +215,107 @@ public class GunController : MonoBehaviour
     /// <summary>Instantiates a <see cref="BulletProjectile"/> and initialises it.</summary>
     private void FirePhysicalBullet(Vector2 origin, Vector2 direction)
     {
+        int   effectiveDamage = GetEffectiveDamage();
+        float effectiveSpeed  = GetEffectiveBulletSpeed();
+        float effectiveRange  = GetEffectiveBulletRange();
+
         BulletProjectile bullet = Instantiate(bulletPrefab, origin, Quaternion.identity);
-        bullet.Init(direction, damage, bulletSpeed, bulletRange);
+        bullet.Init(direction, effectiveDamage, effectiveSpeed, effectiveRange);
     }
 
     /// <summary>
-    /// Performs an instant hitscan raycast and applies damage if the ray hits an
-    /// <see cref="IDamageable"/> target.
+    /// Performs an instant hitscan raycast, applies combo-scaled damage to the
+    /// first <see cref="IDamageable"/> hit, applies knockback, and spawns hit
+    /// particles via <see cref="HitEffectManager"/>.
     /// </summary>
     private void FireHitscan(Vector2 origin, Vector2 direction)
     {
-        RaycastHit2D hit = Physics2D.Raycast(origin, direction, bulletRange, hitscanLayerMask);
+        int   effectiveDamage = GetEffectiveDamage();
+        float effectiveRange  = GetEffectiveBulletRange();
+
+        RaycastHit2D hit = Physics2D.Raycast(origin, direction, effectiveRange, hitscanLayerMask);
 
         if (hit.collider != null)
         {
+            // ── Damage ────────────────────────────────────────────────────────
             IDamageable target = hit.collider.GetComponent<IDamageable>();
-            target?.TakeDamage(damage);
-            Debug.Log($"[GunController] Hitscan hit {hit.collider.name}");
+            if (target != null)
+            {
+                target.TakeDamage(effectiveDamage);
+
+                // Register the hit with the combo system
+                _comboSystem?.RegisterHit();
+            }
+
+            // ── Knockback ─────────────────────────────────────────────────────
+            Rigidbody2D hitRb = hit.collider.GetComponent<Rigidbody2D>();
+            if (hitRb != null)
+            {
+                float knockbackForce = GetEffectiveKnockbackForce();
+                KnockbackSystem.ApplyKnockback(hitRb, origin, knockbackForce, knockbackDuration);
+            }
+
+            // ── Hit Particles ─────────────────────────────────────────────────
+            if (HitEffectManager.Instance != null)
+            {
+                Color hitColor = GetEffectiveBulletColor();
+                HitEffectManager.Instance.PlayHitEffect(hit.point, hitColor);
+            }
+
+            Debug.Log($"[GunController] Hitscan hit {hit.collider.name} for {effectiveDamage} dmg");
         }
 
         // Draw the ray in the Scene view for easy debugging
-        Debug.DrawRay(origin, direction * bulletRange, hit.collider != null ? Color.red : Color.yellow, 0.1f);
+        Debug.DrawRay(origin, direction * effectiveRange, hit.collider != null ? Color.red : Color.yellow, 0.1f);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Effective-Value Helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the effective damage per shot, factoring in the active AmmoType's
+    /// base damage and the <see cref="ComboSystem"/> multiplier.
+    /// </summary>
+    private int GetEffectiveDamage()
+    {
+        int baseDamage = (_ammoManager != null && _ammoManager.CurrentAmmo != null)
+            ? _ammoManager.CurrentAmmo.damage
+            : damage;
+
+        float multiplier = _comboSystem != null ? _comboSystem.GetDamageMultiplier() : 1f;
+        return Mathf.RoundToInt(baseDamage * multiplier);
+    }
+
+    /// <summary>Returns bullet speed from AmmoType or inspector fallback.</summary>
+    private float GetEffectiveBulletSpeed()
+    {
+        if (_ammoManager != null && _ammoManager.CurrentAmmo != null)
+            return _ammoManager.CurrentAmmo.bulletSpeed;
+        return bulletSpeed;
+    }
+
+    /// <summary>Returns bullet range from AmmoType or inspector fallback.</summary>
+    private float GetEffectiveBulletRange()
+    {
+        if (_ammoManager != null && _ammoManager.CurrentAmmo != null)
+            return _ammoManager.CurrentAmmo.bulletRange;
+        return bulletRange;
+    }
+
+    /// <summary>Returns knockback force from AmmoType or zero when none is set.</summary>
+    private float GetEffectiveKnockbackForce()
+    {
+        if (_ammoManager != null && _ammoManager.CurrentAmmo != null)
+            return _ammoManager.CurrentAmmo.knockbackForce;
+        return 0f;
+    }
+
+    /// <summary>Returns the bullet tint colour from AmmoType or white when none is set.</summary>
+    private Color GetEffectiveBulletColor()
+    {
+        if (_ammoManager != null && _ammoManager.CurrentAmmo != null)
+            return _ammoManager.CurrentAmmo.bulletColor;
+        return Color.white;
     }
 }
